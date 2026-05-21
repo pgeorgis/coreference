@@ -39,30 +39,21 @@ import nltk
 import torch
 from transformers import MT5ForConditionalGeneration, T5Tokenizer
 
-# ---------------------------------------------------------------------------
-# Globals set by load_model()
-# ---------------------------------------------------------------------------
-
-tokenizer_mt5: Optional[T5Tokenizer] = None
-model: Optional[MT5ForConditionalGeneration] = None
-tokenizer_nltk = nltk.WordPunctTokenizer()
+# Load constant tokenizers (mT5 and NLTK)
+TOKENIZER_MT5: T5Tokenizer = T5Tokenizer.from_pretrained("google/mt5-xxl")
+TOKENIZER_NLTK = nltk.WordPunctTokenizer()
 
 
 # ---------------------------------------------------------------------------
 # Model loading
 # ---------------------------------------------------------------------------
 
-def load_model(hf_model_path: str) -> None:
-    """Load the tokenizer (always from HuggingFace Hub) and optionally the
-    converted HuggingFace model weights.
+def load_model(hf_model_path: str) -> MT5ForConditionalGeneration:
+    """Load coreference resolution model weights from HuggingFace checkpoint format.
 
     Args:
-        hf_model_path: Path to a converted HuggingFace checkpoint directory.
+        hf_model_path: Path to a (converted) HuggingFace checkpoint directory.
     """
-    global tokenizer_mt5, model
-
-    print("Loading tokenizer from google/mt5-xxl ...")
-    tokenizer_mt5 = T5Tokenizer.from_pretrained("google/mt5-xxl")
 
     print(f"Loading model from {hf_model_path} ...")
     # Use float16 to fit in 64 GB. On Apple Silicon, MPS gives access to
@@ -82,13 +73,14 @@ def load_model(hf_model_path: str) -> None:
     model.eval()
     print(f"Model loaded — device={device_map}, "
             f"dtype={next(model.parameters()).dtype}")
+    return model
 
 
 # ---------------------------------------------------------------------------
 # Prediction
 # ---------------------------------------------------------------------------
 
-def predictor_fn(batch: list[str]) -> list[str]:
+def predictor_fn(batch: list[str], model: MT5ForConditionalGeneration) -> list[str]:
     """Run the mT5 model on a single batch of annotated input strings.
 
     Args:
@@ -99,14 +91,10 @@ def predictor_fn(batch: list[str]) -> list[str]:
         List of model output strings, one per input, e.g.
             ['It ## is named after -> The Eiffel Tower ## ...']
     """
-    if model is None:
-        raise RuntimeError(
-            "Model is not loaded. Call load_model(hf_model_path=...) first"
-        )
 
     # Move inputs to whichever device the model is on (MPS, CUDA, or CPU).
     device = next(model.parameters()).device
-    inputs = tokenizer_mt5(
+    inputs = TOKENIZER_MT5(
         batch,
         return_tensors="pt",
         padding=True,
@@ -121,14 +109,18 @@ def predictor_fn(batch: list[str]) -> list[str]:
             num_beams=1,
         )
 
-    return tokenizer_mt5.batch_decode(output_ids, skip_special_tokens=True)
+    return TOKENIZER_MT5.batch_decode(output_ids, skip_special_tokens=True)
 
 
-def predict_coreferences(batches: list[list[str]], threads_to_use: int = 1) -> list[str]:
+def predict_coreferences(model: MT5ForConditionalGeneration,
+                         batches: list[list[str]],
+                         threads_to_use: int = 1,
+                         ) -> list[str]:
     """Run prediction over a list of batches, returning one result string per
     input document.
 
     Args:
+        model: Pre-trained and loaded mT5 coreference resolution model.
         batches: List of batches, where each batch is a list of input strings.
         threads_to_use: Number of threads for parallel batch processing.
 
@@ -136,7 +128,10 @@ def predict_coreferences(batches: list[list[str]], threads_to_use: int = 1) -> l
         Flat list of prediction strings, one per input string.
     """
     with multiprocessing.pool.ThreadPool(threads_to_use) as pool:
-        batch_results = pool.map(predictor_fn, batches)
+        batch_results = pool.starmap(
+            predictor_fn,
+            [(batch, model) for batch in batches]
+        )
     # Flatten: each element of batch_results is a list[str] for one batch.
     return [s for batch in batch_results for s in batch]
 
@@ -570,7 +565,7 @@ class State:
     input_annotation = _build_annotation_full
 
     def _encode(self, annotation_str: str) -> list[int]:
-        return tokenizer_mt5.encode(annotation_str)
+        return TOKENIZER_MT5.encode(annotation_str)
 
     def get_input_annotation(self, context_right: bool = True) -> str:
         """Return the model input string for the current focus sentence.
@@ -668,7 +663,7 @@ def create_document(document: str, title: str = "not_named") -> dict:
 
     tid = 0
     for k, sentence in enumerate(document.split("\n")):
-        input_document["sentences"][k] = tokenizer_nltk.tokenize(text=sentence)
+        input_document["sentences"][k] = TOKENIZER_NLTK.tokenize(text=sentence)
         input_document["token_maps"][k] = []
         for _ in input_document["sentences"][k]:
             input_document["token_maps"][k].append(tid)
@@ -778,6 +773,7 @@ def render_annotated_text(states_dict: dict) -> dict[str, str]:
 
 def run(
     documents: dict[str, str],
+    model: MT5ForConditionalGeneration,
     debug: bool = False,
 ) -> dict[str, str]:
     """Process one or more documents through the coreference system.
@@ -785,6 +781,7 @@ def run(
     Args:
         documents: Mapping of document title → plain text (sentences separated
             by newlines).
+        model: Pre-trained and loaded mT5 model for coreference resolution. 
         debug: Print per-step input/output strings.
 
     Returns:
@@ -810,7 +807,7 @@ def run(
             print(f"\nStep {step} — processing: {doc_keys}")
 
         # Get prediction strings
-        results = predict_coreferences(batches, threads_to_use=len(batches))
+        results = predict_coreferences(model, batches, threads_to_use=len(batches))
 
         for state, result, batch in zip(states, results, batches):
             state.extend(result)
@@ -878,9 +875,10 @@ def main() -> None:
         print("Error: provide --text or --file when using --model-path.")
         return
 
-    load_model(hf_model_path=args.model_path)
+    coref_model = load_model(hf_model_path=args.model_path)
     annotated = run(
         documents={args.title: text},
+        model=coref_model,
         debug=args.debug,
     )
 
