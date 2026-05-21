@@ -23,9 +23,6 @@ Adapted from https://github.com/google-research/google-research/blob/master/core
 
 Usage
 -----
-# Run the built-in Eiffel Tower demo (no model needed):
-    python coreference.py --demo
-
 # Run on custom text with a locally-converted HuggingFace checkpoint:
     python coreference.py --model-path coref-mt5-xxl-bohnetetal2022/ --text "Your text here."
 
@@ -39,54 +36,8 @@ import time
 from typing import Optional
 
 import nltk
-from transformers import T5Tokenizer, MT5ForConditionalGeneration
 import torch
-
-
-# ---------------------------------------------------------------------------
-# Demo predictions (hardcoded from the notebook — Eiffel Tower Wikipedia excerpt)
-# ---------------------------------------------------------------------------
-
-DEMO_TEXT_TITLE = "Eiffel Tower Wiki"
-DEMO_TEXT = (
-    "The Eiffel Tower (French: tour Eiffel) is a wrought-iron lattice tower "
-    "on the Champ de Mars in Paris, France. It is named after the engineer "
-    "Gustave Eiffel, whose company designed and built the tower.\n"
-    "Locally nicknamed \"La dame de fer\" (French for \"Iron Lady\"), it was "
-    "constructed from 1887 to 1889 as the centerpiece of the 1889 World's Fair.\n"
-    "Although initially criticised by some of France's leading artists and "
-    "intellectuals for its design, it has since become a global cultural icon "
-    "of France and one of the most recognisable structures in the world.\n"
-    "The Eiffel Tower is the most visited monument with an entrance fee in "
-    "the world: 6.91 million people ascended it in 2015.\n"
-    "It was designated a monument historique in 1964, and was named part of a "
-    "UNESCO World Heritage Site (\"Paris, Banks of the Seine\") in 1991."
-)
-
-# One prediction string per sentence (separated by ';;', each link is
-# 'mention ## context -> antecedent ## context').
-DEMO_PREDICTIONS = [
-    (
-        'It ## is named after -> The Eiffel Tower ( French : tour Eiffel ) ##'
-        ' is a wrought ;; the tower ## . ** _ -> It ## is named after ;;'
-    ),
-    'it ## was constructed from -> [1 ;;',
-    (
-        'its ## design , it -> [1 ;; it ## has since become -> its ## design'
-        " , it ;; France ' s ## leading artists and -> France ## . [1 It ;;"
-        " France ## and one of -> France ' s ## leading artists and ;;"
-    ),
-    (
-        'The Eiffel Tower ## is the most -> [1 ;; it ## in 2015 . -> The'
-        ' Eiffel Tower ## is the most ;; the world ## : 6 . -> the world ## .'
-        ' | _ ;;'
-    ),
-    (
-        'It ## was designated a -> [1 ;; Paris ## , Banks of -> Paris , [2'
-        ' France ## ] . [1 ;;'
-    ),
-]
-
+from transformers import MT5ForConditionalGeneration, T5Tokenizer
 
 # ---------------------------------------------------------------------------
 # Globals set by load_model()
@@ -101,40 +52,36 @@ tokenizer_nltk = nltk.WordPunctTokenizer()
 # Model loading
 # ---------------------------------------------------------------------------
 
-def load_model(hf_model_path: Optional[str] = None) -> None:
+def load_model(hf_model_path: str) -> None:
     """Load the tokenizer (always from HuggingFace Hub) and optionally the
     converted HuggingFace model weights.
 
     Args:
         hf_model_path: Path to a converted HuggingFace checkpoint directory.
-            Leave None to use demo mode (no model needed).
     """
     global tokenizer_mt5, model
 
     print("Loading tokenizer from google/mt5-xxl ...")
     tokenizer_mt5 = T5Tokenizer.from_pretrained("google/mt5-xxl")
 
-    if hf_model_path:
-        print(f"Loading model from {hf_model_path} ...")
-        # Use float16 to fit in 64 GB. On Apple Silicon, MPS gives access to
-        # the full unified memory pool. On CUDA, device_map="auto" shards
-        # across available GPUs.
-        if torch.backends.mps.is_available():
-            device_map = "mps"
-        elif torch.cuda.is_available():
-            device_map = "auto"
-        else:
-            device_map = "cpu"
-        model = MT5ForConditionalGeneration.from_pretrained(
-            hf_model_path,
-            torch_dtype=torch.float16,
-            device_map=device_map,
-        )
-        model.eval()
-        print(f"Model loaded — device={device_map}, "
-              f"dtype={next(model.parameters()).dtype}")
+    print(f"Loading model from {hf_model_path} ...")
+    # Use float16 to fit in 64 GB. On Apple Silicon, MPS gives access to
+    # the full unified memory pool. On CUDA, device_map="auto" shards
+    # across available GPUs.
+    if torch.backends.mps.is_available():
+        device_map = "mps"
+    elif torch.cuda.is_available():
+        device_map = "auto"
     else:
-        print("No model path provided — running in demo mode.")
+        device_map = "cpu"
+    model = MT5ForConditionalGeneration.from_pretrained(
+        hf_model_path,
+        torch_dtype=torch.float16,
+        device_map=device_map,
+    )
+    model.eval()
+    print(f"Model loaded — device={device_map}, "
+            f"dtype={next(model.parameters()).dtype}")
 
 
 # ---------------------------------------------------------------------------
@@ -154,8 +101,7 @@ def predictor_fn(batch: list[str]) -> list[str]:
     """
     if model is None:
         raise RuntimeError(
-            "Model is not loaded. Call load_model(hf_model_path=...) first, "
-            "or run with --demo to use hardcoded predictions."
+            "Model is not loaded. Call load_model(hf_model_path=...) first"
         )
 
     # Move inputs to whichever device the model is on (MPS, CUDA, or CPU).
@@ -832,7 +778,6 @@ def render_annotated_text(states_dict: dict) -> dict[str, str]:
 
 def run(
     documents: dict[str, str],
-    demo_predictions: Optional[list[str]] = None,
     debug: bool = False,
 ) -> dict[str, str]:
     """Process one or more documents through the coreference system.
@@ -840,8 +785,6 @@ def run(
     Args:
         documents: Mapping of document title → plain text (sentences separated
             by newlines).
-        demo_predictions: If provided, use these hardcoded prediction strings
-            instead of calling the model (one string per sentence step).
         debug: Print per-step input/output strings.
 
     Returns:
@@ -866,14 +809,8 @@ def run(
             doc_keys = {s.input_document["doc_key"] for s in states}
             print(f"\nStep {step} — processing: {doc_keys}")
 
-        # Get prediction strings: either from demo list or from the live model.
-        if demo_predictions is not None:
-            if step >= len(demo_predictions):
-                print(f"Warning: ran out of demo predictions at step {step}.")
-                break
-            results = [demo_predictions[step]]
-        else:
-            results = predict_coreferences(batches, threads_to_use=len(batches))
+        # Get prediction strings
+        results = predict_coreferences(batches, threads_to_use=len(batches))
 
         for state, result, batch in zip(states, results, batches):
             state.extend(result)
@@ -903,29 +840,19 @@ def parse_args() -> argparse.Namespace:
     )
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument(
-        "--demo",
-        action="store_true",
-        help="Run the built-in Eiffel Tower demo (no model required).",
-    )
-    mode.add_argument(
         "--model-path",
         metavar="PATH",
-        help=(
-            "Path to a converted HuggingFace checkpoint directory. "
-            "See module docstring for conversion instructions."
-        ),
+        help="Path to a converted HuggingFace checkpoint directory.",
     )
     parser.add_argument(
         "--text",
         metavar="TEXT",
-        help="Input text (sentences separated by newlines). "
-             "Ignored when --demo is set.",
+        help="Input text (sentences separated by newlines)."
     )
     parser.add_argument(
         "--file",
         metavar="FILE",
-        help="Path to a plain-text file (one sentence per line). "
-             "Ignored when --demo is set.",
+        help="Path to a plain-text file (one sentence per line)."
     )
     parser.add_argument(
         "--title",
@@ -942,34 +869,20 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-
-    if args.demo:
-        # Demo mode: use the Eiffel Tower example with hardcoded predictions.
-        # The tokenizer is still needed for context-window length checks inside
-        # the State object, so we load it even in demo mode.
-        load_model(hf_model_path=None)
-        annotated = run(
-            documents={DEMO_TEXT_TITLE: DEMO_TEXT},
-            demo_predictions=DEMO_PREDICTIONS,
-            debug=args.debug,
-        )
+    if args.file:
+        with open(args.file, encoding="utf-8") as f:
+            text = f.read()
+    elif args.text:
+        text = args.text
     else:
-        # Live model mode.
-        if args.file:
-            with open(args.file, encoding="utf-8") as f:
-                text = f.read()
-        elif args.text:
-            text = args.text
-        else:
-            print("Error: provide --text or --file when using --model-path.")
-            return
+        print("Error: provide --text or --file when using --model-path.")
+        return
 
-        load_model(hf_model_path=args.model_path)
-        annotated = run(
-            documents={args.title: text},
-            demo_predictions=None,
-            debug=args.debug,
-        )
+    load_model(hf_model_path=args.model_path)
+    annotated = run(
+        documents={args.title: text},
+        debug=args.debug,
+    )
 
     for doc_name, text in annotated.items():
         print(f"\n=== {doc_name} ===")
