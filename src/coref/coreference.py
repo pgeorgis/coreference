@@ -39,8 +39,10 @@ import nltk
 import torch
 from transformers import MT5ForConditionalGeneration, T5Tokenizer
 
+from constants import DEFAULT_COREF_MODEL_DIR, MT5_TOKENIZER
+
 # Load constant tokenizers (mT5 and NLTK)
-TOKENIZER_MT5: T5Tokenizer = T5Tokenizer.from_pretrained("google/mt5-xxl")
+TOKENIZER_MT5: T5Tokenizer = T5Tokenizer.from_pretrained(MT5_TOKENIZER)
 TOKENIZER_NLTK = nltk.WordPunctTokenizer()
 
 
@@ -835,20 +837,17 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Coreference resolution with mT5 (seq2seq transition-based)."
     )
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument(
+    parser.add_argument(
         "--model-path",
-        metavar="PATH",
-        help="Path to a converted HuggingFace checkpoint directory.",
+        default=DEFAULT_COREF_MODEL_DIR,
+        help="Path to a HuggingFace checkpoint directory for a pre-trained mT5 coreference resolution model.",
     )
     parser.add_argument(
         "--text",
-        metavar="TEXT",
         help="Input text (sentences separated by newlines)."
     )
     parser.add_argument(
         "--file",
-        metavar="FILE",
         help="Path to a plain-text file (one sentence per line)."
     )
     parser.add_argument(
