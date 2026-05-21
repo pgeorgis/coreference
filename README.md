@@ -47,13 +47,13 @@ The above conversion results in two files in [`coref-mt5-xxl-bohnetetal2022`](./
 * [`model.safetensors`](./coref-mt5-xxl-bohnetetal2022/model.safetensors)
 
 ## Usage
-Coreference resolution can be run on novel texts using the [`coreference.py`](./coreference.py) script, adapted from the [Jupyter notebook provided with the pre-trained model](https://github.com/google-research/google-research/blob/master/coref_mt5/colabs/coreference_decoder.ipynb).
+Coreference resolution can be run on novel texts using the [`coreference.py`](../../coreference.py) script in the project root directory, adapted from the [Jupyter notebook provided with the pre-trained model](https://github.com/google-research/google-research/blob/master/coref_mt5/colabs/coreference_decoder.ipynb).
 
 The script should be run using the virtual environment from the main project root.
 
 Example:
 ```
-python3 coreference.py --model-path coref-mt5-xxl-bohnetetal2022 --text python3 coreference.py --model-path coref-mt5-xxl-bohnetetal2022 --text "Der alten Entwicklungshilfepolitik der SPD hält er \"\"Wirtschaftsphobie, Bundeswehrphobie und Israelphobie \"\" vor. Israel, betont der neue Entwicklungshilfeminister, habe die weltweit besten Bewässerungssysteme. Die werde er in der arabischen Welt propagieren."
+python3 coreference.py --model-path models/coref/coref-mt5-xxl-bohnetetal2022 --text "Der alten Entwicklungshilfepolitik der SPD hält er \"\"Wirtschaftsphobie, Bundeswehrphobie und Israelphobie \"\" vor. Israel, betont der neue Entwicklungshilfeminister, habe die weltweit besten Bewässerungssysteme. Die werde er in der arabischen Welt propagieren."
 ```
 
 Example output with resolved coreference annotations:
