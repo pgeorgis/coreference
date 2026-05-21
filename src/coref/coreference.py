@@ -33,6 +33,7 @@ Usage
 import argparse
 import multiprocessing.pool
 import time
+from collections import defaultdict
 from typing import Optional
 
 import nltk
@@ -715,44 +716,66 @@ def create_next_batch(
 # ---------------------------------------------------------------------------
 # Output rendering
 # ---------------------------------------------------------------------------
+def render_annotated_text(states_dict: dict) -> dict[str, dict]:
+    """Format coreference-annotated output text (cluster brackets with entity index are inserted around each mention)
+    for each document and return mention token spans per entity.
 
-def render_annotated_text(states_dict: dict) -> dict[str, str]:
-    """Format coreference-annotated output text for each document.
 
-    Cluster brackets are inserted around each mention:
-        [1 The Eiffel Tower ] ... [1 it ] ...
 
     Args:
-        states_dict: Mapping of document key → State (after full processing).
+        states_dict: Mapping of document key → State
 
-    Returns:
-        Mapping of document key → annotated text string.
+    Example output:
+    {
+        "doc1": {
+            "text": "[1 The Eiffel Tower ] ... [1 it ] ...",
+            "spans": {
+                1: [(1, 3), (8, 8)],
+            },
+        }
+    }
     """
-    outputs: dict[str, str] = {}
+
+    outputs = {}
 
     for doc_name, s in states_dict.items():
         pred_clusters = list(s.cluster_name_to_cluster.values())
 
         # Reconstruct flat token list and token-ID list.
-        text: list[str] = []
-        text_map: list[int] = []
+        text = []
+        text_map = []
+
         for k in sorted(s.input_document["sentences"]):
             text += s.input_document["sentences"][k]
             text_map += s.input_document["token_maps"][k]
 
+        # Map original token IDs -> flat token indices
+        tid_to_pos = {tid: pos for pos, tid in enumerate(text_map)}
+
         # For each token position, collect which cluster spans start/end here.
-        cluster_starts: list[list[tuple[str, int]]] = [[] for _ in text_map]
-        cluster_ends: list[list[str]] = [[] for _ in text_map]
+        cluster_starts = [[] for _ in text_map]
+        cluster_ends = [[] for _ in text_map]
+        entity_spans = defaultdict(list)
 
         for ci in pred_clusters:
             for m in ci:
-                for pos, tid in enumerate(text_map):
-                    if tid == m[0]:
-                        m_len = m[1] - m[0]
-                        name = s.mention_index_to_cluster_name[str(m)]
-                        cluster_starts[pos].append((name, m_len))
-                    if tid == m[1]:
-                        cluster_ends[pos].append("]")
+                start_tid, end_tid = m
+
+                if start_tid not in tid_to_pos or end_tid not in tid_to_pos:
+                    continue
+
+                start_pos = tid_to_pos[start_tid]
+                end_pos = tid_to_pos[end_tid]
+
+                m_len = end_tid - start_tid
+                name = s.mention_index_to_cluster_name[str(m)]
+
+                # Store span
+                entity_spans[name].append((start_pos, end_pos))
+
+                # Annotation bookkeeping
+                cluster_starts[start_pos].append((name, m_len))
+                cluster_ends[end_pos].append("]")
 
         # Build the annotated token sequence.
         all_text: list[str] = []
@@ -764,7 +787,10 @@ def render_annotated_text(states_dict: dict) -> dict[str, str]:
             if ends:
                 all_text.append("".join(ends))
 
-        outputs[doc_name] = " ".join(all_text)
+        outputs[doc_name] = {
+            "text": " ".join(all_text),
+            "spans": dict(entity_spans),
+        }
 
     return outputs
 
@@ -881,9 +907,9 @@ def main() -> None:
         debug=args.debug,
     )
 
-    for doc_name, text in annotated.items():
+    for doc_name, coref_result in annotated.items():
         print(f"\n=== {doc_name} ===")
-        print(text)
+        print(coref_result["text"])
 
 
 if __name__ == "__main__":
