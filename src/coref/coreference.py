@@ -126,7 +126,7 @@ def predictor_fn(batch: list[str],
         output_ids = model.generate(
             **inputs,
             max_new_tokens=max_new_tokens,
-            num_beams=1,
+            num_beams=1,  # NB: greedy search
         )
 
     # Warn in case of truncated outputs due to reaching maximum new token limit
