@@ -921,7 +921,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--file",
         nargs="*",
-        help="Path to a plain-text file"
+        help="Path to a plain-text file (one sentence per line)."
     )
     parser.add_argument(
         "--file-encoding",
