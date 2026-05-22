@@ -56,7 +56,7 @@ TOKENIZER_MT5: T5Tokenizer = T5Tokenizer.from_pretrained(MT5_TOKENIZER)
 TOKENIZER_NLTK = nltk.WordPunctTokenizer()
 # Token limit defaults
 DEFAULT_MAX_TOKEN_LENGTH = 1024
-DEFAULT_MAX_NEW_TOKENS = 256
+DEFAULT_MAX_NEW_TOKENS = 128
 
 # ---------------------------------------------------------------------------
 # Model loading
