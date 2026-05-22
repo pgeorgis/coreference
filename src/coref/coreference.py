@@ -120,7 +120,7 @@ def predictor_fn(batch: list[str], model: MT5ForConditionalGeneration) -> list[s
 
 def predict_coreferences(model: MT5ForConditionalGeneration,
                          batches: list[list[str]],
-                         threads_to_use: int = 1,
+                         max_workers: int = 1,
                          ) -> list[str]:
     """Run prediction over a list of batches, returning one result string per
     input document.
@@ -128,12 +128,12 @@ def predict_coreferences(model: MT5ForConditionalGeneration,
     Args:
         model: Pre-trained and loaded mT5 coreference resolution model.
         batches: List of batches, where each batch is a list of input strings.
-        threads_to_use: Number of threads for parallel batch processing.
+        max_workers: Number of worker threads for parallel batch processing.
 
     Returns:
         Flat list of prediction strings, one per input string.
     """
-    with multiprocessing.pool.ThreadPool(threads_to_use) as pool:
+    with multiprocessing.pool.ThreadPool(max_workers) as pool:
         batch_results = pool.starmap(
             predictor_fn,
             [(batch, model) for batch in batches]
@@ -801,6 +801,7 @@ def render_annotated_text(states_dict: dict) -> dict[str, dict]:
 def run(
     documents: dict[str, str],
     model: MT5ForConditionalGeneration,
+    max_workers: int = 1,
     debug: bool = False,
 ) -> dict[str, str]:
     """Process one or more documents through the coreference system.
@@ -834,7 +835,7 @@ def run(
             logger.debug(f"Step {step} — processing: {doc_keys}")
 
         # Get prediction strings
-        results = predict_coreferences(model, batches, threads_to_use=len(batches))
+        results = predict_coreferences(model, batches, max_workers=max_workers)
 
         for state, result, batch in zip(states, results, batches):
             state.extend(result)
@@ -880,6 +881,12 @@ def parse_args() -> argparse.Namespace:
         help="Encoding for input text files."
     )
     parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=1,
+        help="Number of worker threads for parallel processing."
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Print per-step model inputs and predictions.",
@@ -915,6 +922,7 @@ def main() -> None:
     annotated = run(
         documents=documents,
         model=coref_model,
+        max_workers=args.max_workers,
         debug=args.debug,
     )
 
