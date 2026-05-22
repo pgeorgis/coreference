@@ -33,12 +33,14 @@ Usage
 import argparse
 import logging
 import multiprocessing.pool
+import sys
 import time
 from collections import defaultdict
 from typing import Optional
 
 import nltk
 import torch
+from tqdm import tqdm
 from transformers import MT5ForConditionalGeneration, T5Tokenizer
 
 from constants import DEFAULT_COREF_MODEL_DIR, MT5_TOKENIZER
@@ -864,39 +866,52 @@ def run(
 
     total_time = time.time()
     total_results = 0
+    total_sentences = sum(len(s.input_document["sentences"]) for s in states_dict.values())
+    n_docs = len(states_dict)
+    max_sents = max(len(s.input_document["sentences"]) for s in states_dict.values())
 
-    for step in range(1000):
-        t = time.time()
-        states, batches = create_next_batch(states_dict, batch_size=batch_size)
+    with tqdm(total=total_sentences, unit="sent", desc="Coreference", disable=not sys.stderr.isatty()) as pbar:
+        for step in range(1000):
+            t = time.time()
+            states, batches = create_next_batch(
+                states_dict,
+                batch_size=batch_size,
+            )
 
-        if not states:
-            break
+            if not states:
+                break
 
-        if debug:
-            doc_keys = {s.input_document["doc_key"] for s in states}
-            logger.debug(f"Step {step} — processing: {doc_keys}")
+            if debug:
+                doc_keys = {s.input_document["doc_key"] for s in states}
+                logger.debug(f"Step {step} — processing: {doc_keys}")
 
-        # Get prediction strings
-        results = predict_coreferences(
-            model,
-            batches,
-            max_new_tokens=max_new_tokens,
-            max_workers=max_workers,
-        )
+            # Get prediction strings
+            results = predict_coreferences(
+                model,
+                batches,
+                max_new_tokens=max_new_tokens,
+                max_workers=max_workers,
+            )
 
-        flat_inputs = [s for batch in batches for s in batch]
-        for state, result, input_str in zip(states, results, flat_inputs):
-            state.extend(result)
-            logger.debug(f"\tinput:\t{input_str}")
-            logger.debug(f"\tprediction:\t{result}")
+            flat_inputs = [s for batch in batches for s in batch]
+            for state, result, input_str in zip(states, results, flat_inputs):
+                state.extend(result)
+                logger.debug(f"\tinput:\t{input_str}")
+                logger.debug(f"\tprediction:\t{result}")
 
-        total_results += len(results)
-        elapsed = time.time() - t
-        logger.debug(
-            f"  step time: {elapsed:.3f}s | "
-            f"per-seq: {elapsed/len(results):.3f}s | "
-            f"total per-seq: {(time.time()-total_time)/total_results:.3f}s"
-        )
+            total_results += len(results)
+            elapsed = time.time() - t
+            logger.debug(
+                f"  step time: {elapsed:.3f}s | "
+                f"per-seq: {elapsed/len(results):.3f}s | "
+                f"total per-seq: {(time.time()-total_time)/total_results:.3f}s"
+            )
+
+            pbar.update(len(states))
+            # pbar.n // n_docs approximates which sentence pass reached across all docs
+            sent_round = pbar.n // n_docs
+            docs_done = sum(1 for s in states_dict.values() if s.extend_done())
+            pbar.set_postfix({"sent": f"{sent_round}/{max_sents}", "docs done": f"{docs_done}/{n_docs}"})
 
     return render_annotated_text(states_dict)
 
