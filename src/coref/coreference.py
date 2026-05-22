@@ -871,7 +871,8 @@ def run(
     max_sents = max(len(s.input_document["sentences"]) for s in states_dict.values())
 
     with tqdm(total=total_sentences, unit="sent", desc="Coreference", disable=not sys.stderr.isatty()) as pbar:
-        for step in range(1000):
+        step = 0
+        while True:
             t = time.time()
             states, batches = create_next_batch(
                 states_dict,
@@ -912,6 +913,7 @@ def run(
             sent_round = pbar.n // n_docs
             docs_done = sum(1 for s in states_dict.values() if s.extend_done())
             pbar.set_postfix({"sent": f"{sent_round}/{max_sents}", "docs done": f"{docs_done}/{n_docs}"})
+            step += 1
 
     return render_annotated_text(states_dict)
 
