@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 # Load constant tokenizers (mT5 and NLTK)
 TOKENIZER_MT5: T5Tokenizer = T5Tokenizer.from_pretrained(MT5_TOKENIZER)
 TOKENIZER_NLTK = nltk.WordPunctTokenizer()
-
+MAX_TOKEN_LENGTH = 1024
 
 # ---------------------------------------------------------------------------
 # Model loading
@@ -105,7 +105,7 @@ def predictor_fn(batch: list[str], model: MT5ForConditionalGeneration) -> list[s
         return_tensors="pt",
         padding=True,
         truncation=True,
-        max_length=1024,
+        max_length=MAX_TOKEN_LENGTH,
     ).to(device)
 
     with torch.no_grad():
@@ -360,7 +360,7 @@ class State:
         self,
         input_document: dict,
         node_wise: bool = True,
-        max_len_doc: int = 3000,
+        max_len_doc: int = MAX_TOKEN_LENGTH,
     ):
         """
         Args:
