@@ -867,16 +867,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--text",
-        help="Input text (sentences separated by newlines)."
+        help="Input text(s) (texts separated by newlines)."
     )
     parser.add_argument(
         "--file",
-        help="Path to a plain-text file (one sentence per line)."
+        nargs="*",
+        help="Path to a plain-text file"
     )
     parser.add_argument(
-        "--title",
-        default="document",
-        help="Document title used in output (default: 'document').",
+        "--file-encoding",
+        default="utf-8",
+        help="Encoding for input text files."
     )
     parser.add_argument(
         "--debug",
@@ -890,18 +891,29 @@ def main() -> None:
     args = parse_args()
     if args.debug:
         logger.setLevel(logging.DEBUG)
+    if args.file and args.text:
+        logger.error("Provide only --text or --file argument, not both.")
+        return
     if args.file:
-        with open(args.file, encoding="utf-8") as f:
-            text = f.read()
+        documents = {}
+        for filepath in args.file:
+            with open(filepath, 'r', encoding=args.file_encoding) as f:
+                text = f.read()
+                documents[filepath] = text
     elif args.text:
-        text = args.text
+        texts = args.text.replace("\\n", "\n").split("\n")
+        documents = {
+            f"doc_{i + 1:03d}": text
+            for i, text in enumerate(texts)
+        }
     else:
         logger.error("Provide --text or --file argument.")
         return
+    logger.debug(f"Loaded {len(documents)} input document(s)")
 
     coref_model = load_model(hf_model_path=args.model_path)
     annotated = run(
-        documents={args.title: text},
+        documents=documents,
         model=coref_model,
         debug=args.debug,
     )
