@@ -122,7 +122,7 @@ def predictor_fn(batch: list[str],
         max_length=DEFAULT_MAX_TOKEN_LENGTH,
     ).to(device)
 
-    with torch.no_grad():
+    with torch.inference_mode():
         output_ids = model.generate(
             **inputs,
             max_new_tokens=max_new_tokens,
