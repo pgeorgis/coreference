@@ -62,11 +62,12 @@ DEFAULT_MAX_NEW_TOKENS = 128
 # Model loading
 # ---------------------------------------------------------------------------
 
-def load_model(hf_model_path: str) -> MT5ForConditionalGeneration:
+def load_model(hf_model_path: str, compile: bool = True) -> MT5ForConditionalGeneration:
     """Load coreference resolution model weights from HuggingFace checkpoint format.
 
     Args:
         hf_model_path: Path to a (converted) HuggingFace checkpoint directory.
+        compile (bool): If True, compiles the model with torch.compile() before returning.
     """
 
     logger.info(f"Loading model from {hf_model_path} ...")
@@ -86,6 +87,9 @@ def load_model(hf_model_path: str) -> MT5ForConditionalGeneration:
     )
     model.eval()
     logger.debug(f"Model loaded: device={device_map}, dtype={next(model.parameters()).dtype}")
+    if compile:
+        logger.debug("Compiling model...")
+        return torch.compile(model)
     return model
 
 
