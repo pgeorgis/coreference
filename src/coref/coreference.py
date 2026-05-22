@@ -31,6 +31,7 @@ Usage
 """
 
 import argparse
+import logging
 import multiprocessing.pool
 import time
 from collections import defaultdict
@@ -41,6 +42,9 @@ import torch
 from transformers import MT5ForConditionalGeneration, T5Tokenizer
 
 from constants import DEFAULT_COREF_MODEL_DIR, MT5_TOKENIZER
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)s %(levelname)s: %(message)s')
+logger = logging.getLogger(__name__)
 
 # Load constant tokenizers (mT5 and NLTK)
 TOKENIZER_MT5: T5Tokenizer = T5Tokenizer.from_pretrained(MT5_TOKENIZER)
@@ -58,7 +62,7 @@ def load_model(hf_model_path: str) -> MT5ForConditionalGeneration:
         hf_model_path: Path to a (converted) HuggingFace checkpoint directory.
     """
 
-    print(f"Loading model from {hf_model_path} ...")
+    logger.info(f"Loading model from {hf_model_path} ...")
     # Use float16 to fit in 64 GB. On Apple Silicon, MPS gives access to
     # the full unified memory pool. On CUDA, device_map="auto" shards
     # across available GPUs.
@@ -74,8 +78,7 @@ def load_model(hf_model_path: str) -> MT5ForConditionalGeneration:
         device_map=device_map,
     )
     model.eval()
-    print(f"Model loaded — device={device_map}, "
-            f"dtype={next(model.parameters()).dtype}")
+    logger.debug(f"Model loaded: device={device_map}, dtype={next(model.parameters()).dtype}")
     return model
 
 
@@ -184,7 +187,7 @@ def match_mention_state(
         index_num = m.index("##")
     else:
         if not m[0].startswith("["):
-            print("get_chains::error ## not in split", m)
+            logger.debug(f"get_chains::error ## not in split: {m}")
         index_num = len(m)
 
     if "]]" in inputs:
@@ -209,19 +212,19 @@ def match_mention_state(
             span = (maps[i], maps[i + index_num - 1])
             indices.append(span)
             if maps[i + index_num - 1] == -1:
-                print("index negative", maps[i:], " index_num", index_num)
-                print("index negative", inputs[i:], " index_num", index_num)
-                print(f"i {i} maps_index {i}")
+                logger.debug(f"index negative {maps[i:]}, index_num {index_num}")
+                logger.debug(f"index negative {inputs[i:]}, index_num {index_num}")
+                logger.debug(f"i {i} maps_index {i}")
 
     if len(indices) == 0:
-        print("none found match_mention", m)
-        print("inputs", inputs)
+        logger.debug(f"none found match_mention: {m}")
+        logger.debug(f"inputs: {inputs}")
         return []
     elif len(indices) > 1 and debug:
-        print("match_mention: too many ", m, indices, "m_clean - use both")
+        logger.debug(f"match_mention: too many {m} {indices} m_clean - use both")
 
     if (-1, -1) in indices:
-        print("error for ", m, indices)
+        logger.debug(f"error for {m} {indices}")
         return []
 
     return indices
@@ -260,14 +263,13 @@ def match_link_state(
             index_m0 = match_mention_state(m0, inputs, maps, position=None)
             links = [index_m0]
         except Exception as e:
-            print(str(e))
+            logger.error(str(e))
         return links
 
     m0 = link_mentions[0]
     m1 = link_mentions[1]
 
-    if debug:
-        print("match_link", m0, m1)
+    logger.debug(f"match_link {m0} {m1}")
 
     # Antecedent is a cluster reference (e.g. '[1') — use the last mention of
     # that cluster as the antecedent span.
@@ -276,34 +278,32 @@ def match_link_state(
         if cluster is not None:
             index_m1 = [cluster[-1]]
         else:
-            print("cluster does not exist")
+            logger.debug("cluster does not exist")
             return []
     else:
         index_m1 = match_mention_state(m1, inputs, maps, position=None)
 
-    if debug:
-        print(index_m1, "match", m1)
+    logger.debug(f"{index_m1} match {m1}")
     if len(index_m1) > 1:
-        print("index_m1", index_m1)
+        logger.debug(f"index_m1 {index_m1}")
 
     try:
         index_m0 = match_mention_state(m0, inputs, maps, position=None)
     except Exception as e:
-        print("error", str(e))
+        logger.error(str(e))
         index_m0 = []
 
-    if debug:
-        print(index_m0, "match", m0)
+    logger.debug(f'{index_m0} match {m0}')
     if len(index_m0) > 1:
-        print("index_m0", index_m0)
+        logger.debug(f"index_m0: {index_m0}")
 
     if len(index_m1) > 0 and len(index_m0) > 0:
         links.append([index_m1[-1], index_m0[-1]])
 
     # Keep only the last link when multiple are found.
     if len(links) > 1:
-        print("too many links,", links, "for link", link)
-        print("context", inputs)
+        logger.debug(f"too many links, {links} for link {link}")
+        logger.debug(f"context: {inputs}")
         return links[-1:]
 
     return links
@@ -329,11 +329,11 @@ def get_mentions_for_link_state(link: str, node_wise: bool) -> list[str]:
         return [link_split[0].strip()]
 
     if len(link_split) < 2:
-        print("link has only one mention - skipping mention", link)
+        logger.debug(f"link has only one mention - skipping mention: {link}")
         return []
 
     if len(link_split) > 2:
-        print("link has too many mentions - using first two.", link)
+        logger.debug(f"link has too many mentions - using first two: {link}")
 
     return [link_split[0].strip(), link_split[1].strip()]
 
@@ -440,7 +440,7 @@ class State:
                 if len(link_mentions) < 2 and not (
                     self.node_wise and len(link_mentions)
                 ):
-                    print("less mentions than needed, skip", link_mentions)
+                    logger.debug(f"fewer mentions than needed, skip {link_mentions}")
                     continue
 
                 indices = match_link_state(
@@ -452,10 +452,9 @@ class State:
                 )
 
                 if not indices:
-                    print("not found !!")
-                    print("indices not found", link, indices)
-                    print("self.annotation_full", self.annotation_full)
-                    print("annotation + context", self.get_input_annotation())
+                    logger.debug(f"indices not found {link} {indices}")
+                    logger.debug(f"self.annotation_full: {self.annotation_full}")
+                    logger.debug(f"annotation + context: {self.get_input_annotation()}",)
                     continue
 
                 index = indices[0]
@@ -636,7 +635,7 @@ class State:
 
         enc = self._encode(annotation_str)
         if len(enc) > self.max_len_doc:
-            print("warning: document too long", len(enc))
+            logger.warning(f"Document too long: {len(enc)}")
 
         return annotation_str
 
@@ -832,25 +831,23 @@ def run(
 
         if debug:
             doc_keys = {s.input_document["doc_key"] for s in states}
-            print(f"\nStep {step} — processing: {doc_keys}")
+            logger.debug(f"Step {step} — processing: {doc_keys}")
 
         # Get prediction strings
         results = predict_coreferences(model, batches, threads_to_use=len(batches))
 
         for state, result, batch in zip(states, results, batches):
             state.extend(result)
-            if debug:
-                print("  input:      ", batch[0] if batch else "")
-                print("  prediction: ", result)
+            logger.debug(f"\tinput:\t{batch[0] if batch else ''}")
+            logger.debug(f"\tprediction:\t{result}")
 
         total_results += len(results)
         elapsed = time.time() - t
-        if debug:
-            print(
-                f"  step time: {elapsed:.3f}s | "
-                f"per-seq: {elapsed/len(results):.3f}s | "
-                f"total per-seq: {(time.time()-total_time)/total_results:.3f}s"
-            )
+        logger.debug(
+            f"  step time: {elapsed:.3f}s | "
+            f"per-seq: {elapsed/len(results):.3f}s | "
+            f"total per-seq: {(time.time()-total_time)/total_results:.3f}s"
+        )
 
     return render_annotated_text(states_dict)
 
@@ -891,13 +888,15 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
     if args.file:
         with open(args.file, encoding="utf-8") as f:
             text = f.read()
     elif args.text:
         text = args.text
     else:
-        print("Error: provide --text or --file when using --model-path.")
+        logger.error("Provide --text or --file argument.")
         return
 
     coref_model = load_model(hf_model_path=args.model_path)
