@@ -705,14 +705,16 @@ def create_next_batch(
     batches: list[list[str]] = [[]]
     states: list[State] = []
 
-    for key, state in states_dict.items():
-        if state.extend_done():
-            continue
+    # Sort active states by accumulated context length so that documents at
+    # similar stages of processing land in the same batch.
+    # This minimises padding in the GPU forward pass (mixed short/long inputs 
+    # cause the whole batch to be padded to the longest, which dominates compute time).
+    active = sorted(
+        (s for s in states_dict.values() if not s.extend_done()),
+        key=lambda s: len(s.annotation_context),
+    )
+    for state in active[:batch_size * num_batches]:
         states.append(state)
-        if len(states) >= batch_size * num_batches:
-            break
-
-    for state in states:
         batches[-1].append(state.get_input_annotation())
         if len(batches[-1]) >= batch_size:
             if len(batches) >= num_batches:
