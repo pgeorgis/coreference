@@ -644,12 +644,17 @@ class State:
 # Document utilities
 # ---------------------------------------------------------------------------
 
-def create_document(document: str, title: str = "not_named") -> dict:
+def create_document(document: str,
+                    title: str = "document",
+                    is_tokenized: bool = False,
+                    ) -> dict:
     """Tokenise a plain-text document into the internal input format.
 
     Args:
         document: Text with sentences separated by newlines ('\\n').
         title: Document identifier used in output.
+        is_tokenized (bool):    Indicates whether the input text is already tokenized.
+                                If False, the text is tokenized here using NLTK.
 
     Returns:
         Dict with keys: doc_key, sentences, token_maps, speakers, genres.
@@ -665,7 +670,10 @@ def create_document(document: str, title: str = "not_named") -> dict:
 
     tid = 0
     for k, sentence in enumerate(document.split("\n")):
-        input_document["sentences"][k] = TOKENIZER_NLTK.tokenize(text=sentence)
+        if is_tokenized:
+            input_document["sentences"][k] = sentence.split()
+        else:
+            input_document["sentences"][k] = TOKENIZER_NLTK.tokenize(text=sentence)
         input_document["token_maps"][k] = []
         for _ in input_document["sentences"][k]:
             input_document["token_maps"][k].append(tid)
@@ -802,6 +810,7 @@ def run(
     documents: dict[str, str],
     model: MT5ForConditionalGeneration,
     max_workers: int = 1,
+    is_tokenized: bool = False,
     debug: bool = False,
 ) -> dict[str, str]:
     """Process one or more documents through the coreference system.
@@ -816,7 +825,7 @@ def run(
         Mapping of document title → annotated text string with cluster brackets.
     """
     states_dict = {
-        title: State(create_document(text, title))
+        title: State(create_document(text, title, is_tokenized=is_tokenized))
         for title, text in documents.items()
     }
 
@@ -887,6 +896,11 @@ def parse_args() -> argparse.Namespace:
         help="Number of worker threads for parallel processing."
     )
     parser.add_argument(
+        "--pretokenized",
+        action="store_true",
+        help="Marks the input text(s) as pretokenized and will not tokenize again.",
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Print per-step model inputs and predictions.",
@@ -923,6 +937,7 @@ def main() -> None:
         documents=documents,
         model=coref_model,
         max_workers=args.max_workers,
+        is_tokenized=args.pretokenized,
         debug=args.debug,
     )
 
