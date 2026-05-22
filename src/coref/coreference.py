@@ -133,6 +133,8 @@ def predict_coreferences(model: MT5ForConditionalGeneration,
     Returns:
         Flat list of prediction strings, one per input string.
     """
+    if len(batches) == 1:
+        return predictor_fn(batches[0], model)
     with multiprocessing.pool.ThreadPool(max_workers) as pool:
         batch_results = pool.starmap(
             predictor_fn,
@@ -809,6 +811,7 @@ def render_annotated_text(states_dict: dict) -> dict[str, dict]:
 def run(
     documents: dict[str, str],
     model: MT5ForConditionalGeneration,
+    batch_size: int = 8,
     max_workers: int = 1,
     is_tokenized: bool = False,
     debug: bool = False,
@@ -818,8 +821,9 @@ def run(
     Args:
         documents: Mapping of document title → plain text (sentences separated
             by newlines).
-        model: Pre-trained and loaded mT5 model for coreference resolution. 
-        debug: Print per-step input/output strings.
+        model: Pre-trained and loaded mT5 model for coreference resolution.
+        batch_size: Number of documents packed into a single GPU forward pass.
+        debug: Print per-step model inputs and predictions.
 
     Returns:
         Mapping of document title → annotated text string with cluster brackets.
@@ -834,7 +838,7 @@ def run(
 
     for step in range(1000):
         t = time.time()
-        states, batches = create_next_batch(states_dict)
+        states, batches = create_next_batch(states_dict, batch_size=batch_size)
 
         if not states:
             break
@@ -846,9 +850,10 @@ def run(
         # Get prediction strings
         results = predict_coreferences(model, batches, max_workers=max_workers)
 
-        for state, result, batch in zip(states, results, batches):
+        flat_inputs = [s for batch in batches for s in batch]
+        for state, result, input_str in zip(states, results, flat_inputs):
             state.extend(result)
-            logger.debug(f"\tinput:\t{batch[0] if batch else ''}")
+            logger.debug(f"\tinput:\t{input_str}")
             logger.debug(f"\tprediction:\t{result}")
 
         total_results += len(results)
@@ -888,6 +893,12 @@ def parse_args() -> argparse.Namespace:
         "--file-encoding",
         default="utf-8",
         help="Encoding for input text files."
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=8,
+        help="Number of documents packed into a single GPU forward pass for coreference resolution"
     )
     parser.add_argument(
         "--max-workers",
@@ -936,6 +947,7 @@ def main() -> None:
     annotated = run(
         documents=documents,
         model=coref_model,
+        batch_size=args.batch_size,
         max_workers=args.max_workers,
         is_tokenized=args.pretokenized,
         debug=args.debug,
