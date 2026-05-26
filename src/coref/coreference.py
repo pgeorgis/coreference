@@ -71,7 +71,7 @@ DEFAULT_MAX_NEW_TOKENS = 128
 # Model loading
 # ---------------------------------------------------------------------------
 
-def load_model(hf_model_path: str, compile: bool = True) -> MT5ForConditionalGeneration:
+def load_coreference_model(hf_model_path: str, compile: bool = True) -> MT5ForConditionalGeneration:
     """Load coreference resolution model weights from HuggingFace checkpoint format.
 
     Args:
@@ -79,7 +79,7 @@ def load_model(hf_model_path: str, compile: bool = True) -> MT5ForConditionalGen
         compile (bool): If True, compiles the model with torch.compile() before returning.
     """
 
-    logger.info(f"Loading model from {hf_model_path} ...")
+    logger.info(f"Loading coreference model from {hf_model_path} ...")
     # Use float16 to fit in 64 GB. On Apple Silicon, MPS gives access to
     # the full unified memory pool. On CUDA, device_map="auto" shards
     # across available GPUs.
@@ -1015,7 +1015,7 @@ def main() -> None:
         return
     logger.debug(f"Loaded {len(documents)} input document(s)")
 
-    coref_model = load_model(hf_model_path=args.model_path)
+    coref_model = load_coreference_model(hf_model_path=args.model_path)
     annotated = run(
         documents=documents,
         model=coref_model,
