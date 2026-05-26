@@ -51,9 +51,18 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Constants and default values
 # ---------------------------------------------------------------------------
-# Load constant tokenizers (mT5 and NLTK)
-TOKENIZER_MT5: T5Tokenizer = T5Tokenizer.from_pretrained(MT5_TOKENIZER)
+# Lazy-loaded tokenizers (initialized on first use to avoid HF Hub requests at import time)
+_TOKENIZER_MT5: Optional[T5Tokenizer] = None
 TOKENIZER_NLTK = nltk.WordPunctTokenizer()
+
+
+def _get_tokenizer_mt5() -> T5Tokenizer:
+    global _TOKENIZER_MT5
+    if _TOKENIZER_MT5 is None:
+        _TOKENIZER_MT5 = T5Tokenizer.from_pretrained(MT5_TOKENIZER)
+    return _TOKENIZER_MT5
+
+
 # Token limit defaults
 DEFAULT_MAX_TOKEN_LENGTH = 1024
 DEFAULT_MAX_NEW_TOKENS = 128
@@ -118,7 +127,7 @@ def predictor_fn(batch: list[str],
 
     # Move inputs to whichever device the model is on (MPS, CUDA, or CPU).
     device = next(model.parameters()).device
-    inputs = TOKENIZER_MT5(
+    inputs = _get_tokenizer_mt5()(
         batch,
         return_tensors="pt",
         padding=True,
@@ -142,7 +151,7 @@ def predictor_fn(batch: list[str],
             "Coreference links may be truncated. Consider increasing --max-new-tokens."
         )
 
-    return TOKENIZER_MT5.batch_decode(output_ids, skip_special_tokens=True)
+    return _get_tokenizer_mt5().batch_decode(output_ids, skip_special_tokens=True)
 
 
 def predict_coreferences(model: MT5ForConditionalGeneration,
@@ -598,7 +607,7 @@ class State:
     input_annotation = _build_annotation_full
 
     def _encode(self, annotation_str: str) -> list[int]:
-        return TOKENIZER_MT5.encode(annotation_str)
+        return _get_tokenizer_mt5().encode(annotation_str)
 
     def get_input_annotation(self, context_right: bool = True) -> str:
         """Return the model input string for the current focus sentence.
