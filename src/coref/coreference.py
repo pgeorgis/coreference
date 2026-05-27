@@ -106,9 +106,9 @@ def load_coreference_model(hf_model_path: str, compile: bool = True) -> MT5ForCo
 # Prediction
 # ---------------------------------------------------------------------------
 
-def predictor_fn(batch: list[str], 
+def predictor_fn(batch: list[str],
                  model: MT5ForConditionalGeneration,
-                 max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
+                 max_new_tokens: int = None,
                  ) -> list[str]:
     """Run the mT5 model on a single batch of annotated input strings.
 
@@ -117,8 +117,10 @@ def predictor_fn(batch: list[str],
             ['coref: w | _ The Eiffel Tower ... **']
         max_new_tokens: Maximum number of decoder tokens to generate per
             sequence. Each token requires one decoder forward pass, so smaller
-            values are significantly faster. Set high enough that real outputs
-            are never cut off (a warning is logged when the limit is reached).
+            values are significantly faster. If None (default), computed
+            dynamically as max(DEFAULT_MAX_NEW_TOKENS, input_length), so the
+            budget always covers at least the input. A warning is logged if
+            the limit is reached.
 
     Returns:
         List of model output strings, one per input, e.g.
@@ -135,6 +137,12 @@ def predictor_fn(batch: list[str],
         max_length=DEFAULT_MAX_TOKEN_LENGTH,
     ).to(device)
 
+    # Compute token budget from actual input length when not set explicitly.
+    if max_new_tokens is None:
+        input_token_length = inputs['input_ids'].shape[1]
+        max_new_tokens = round(1.5 * input_token_length)
+        logger.debug(f"Input token length: {input_token_length} | Max new tokens: {max_new_tokens}")
+
     with torch.inference_mode():
         output_ids = model.generate(
             **inputs,
@@ -148,7 +156,7 @@ def predictor_fn(batch: list[str],
     if generated_len >= max_new_tokens:
         logger.warning(
             f"An output sequence reached max_new_tokens={max_new_tokens}. "
-            "Coreference links may be truncated. Consider increasing --max-new-tokens."
+            "Coreference links may be truncated."
         )
 
     return _get_tokenizer_mt5().batch_decode(output_ids, skip_special_tokens=True)
@@ -157,7 +165,7 @@ def predictor_fn(batch: list[str],
 def predict_coreferences(model: MT5ForConditionalGeneration,
                          batches: list[list[str]],
                          max_workers: int = 1,
-                         max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
+                         max_new_tokens: int = None,
                          ) -> list[str]:
     """Run prediction over a list of batches, returning one result string per
     input document.
@@ -167,6 +175,7 @@ def predict_coreferences(model: MT5ForConditionalGeneration,
         batches: List of batches, where each batch is a list of input strings.
         max_workers: Number of worker threads for parallel batch processing.
         max_new_tokens: Decoder token budget per sequence (passed to predictor_fn).
+            None means compute dynamically from input length (see predictor_fn).
 
     Returns:
         Flat list of prediction strings, one per input string.
@@ -853,7 +862,7 @@ def run(
     model: MT5ForConditionalGeneration,
     batch_size: int = 8,
     max_workers: int = 1,
-    max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
+    max_new_tokens: int = None,
     is_tokenized: bool = False,
     debug: bool = False,
 ) -> dict[str, str]:
@@ -865,8 +874,9 @@ def run(
         model: Pre-trained and loaded mT5 model for coreference resolution.
         batch_size: Number of documents packed into a single GPU forward pass.
         max_new_tokens: Decoder token budget per sequence. Each additional token
-            costs one decoder forward pass, so reduce this for shorter texts.
-            A warning is logged if any output hits the limit.
+            costs one decoder forward pass. None (default) means compute
+            dynamically from input length. A warning is logged if any output
+            hits the limit.
         debug: Print per-step model inputs and predictions.
 
     Returns:
@@ -967,9 +977,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-new-tokens",
         type=int,
-        default=DEFAULT_MAX_NEW_TOKENS,
+        default=None,
         help="Maximum decoder tokens to generate per sequence per step. "
-             "Each token costs one decoder forward pass; reduce for shorter texts. "
+             "Each token costs one decoder forward pass. "
+             "Default: computed dynamically from input length. "
              "A warning is logged if any output reaches this limit."
     )
     parser.add_argument(
