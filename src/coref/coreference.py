@@ -44,6 +44,7 @@ from tqdm import tqdm
 from transformers import MT5ForConditionalGeneration, T5Tokenizer
 
 from constants import DEFAULT_COREF_MODEL_DIR, MT5_TOKENIZER
+from utils import ProgressLogger
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)s %(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
@@ -893,6 +894,15 @@ def run(
     n_docs = len(states_dict)
     max_sents = max(len(s.input_document["sentences"]) for s in states_dict.values())
 
+    # Periodic log fallback when stderr is not a tty (progress bar disabled)
+    progress = ProgressLogger(
+        total=total_sentences,
+        label="Coreference",
+        unit="sent",
+        enabled=not sys.stderr.isatty()
+    )
+    sentences_processed = 0
+
     with tqdm(total=total_sentences, unit="sent", desc="Coreference", disable=not sys.stderr.isatty()) as pbar:
         step = 0
         while True:
@@ -932,9 +942,12 @@ def run(
             )
 
             pbar.update(len(states))
+            sentences_processed += len(states)
+            docs_done = sum(1 for s in states_dict.values() if s.extend_done())
+            progress.update(len(states), extra=f"{docs_done}/{n_docs} docs done")
+
             # pbar.n // n_docs approximates which sentence pass reached across all docs
             sent_round = pbar.n // n_docs
-            docs_done = sum(1 for s in states_dict.values() if s.extend_done())
             pbar.set_postfix({"sent": f"{sent_round}/{max_sents}", "docs done": f"{docs_done}/{n_docs}"})
             step += 1
 
