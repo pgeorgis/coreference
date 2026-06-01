@@ -6,9 +6,11 @@ The pre-trained coreference resolution model included here is the multilingual s
 ### Model checkpoint download
 The [model checkpoint linked to from `google-research/coref_mt5`](https://console.cloud.google.com/storage/browser/gresearch/correference_seq2seq/checkpoint_1140000) was downloaded with [`gsutil`](https://docs.cloud.google.com/storage/docs/gsutil_install), e.g.:
 ```
+mkdir -p models/coref/coref_mt5_source
+
 gsutil -m cp -r \
   gs://gresearch/correference_seq2seq/checkpoint_1140000/ \
-  models/coref/coref_mt5_source
+  models/coref/coref_mt5_source/
 ```
 
 The final [model config](./coref-mt5-xxl-bohnetetal2022/config.json) is saved in this project repository, but if re-downloading and re-converting the checkpoint from the source, the `mt5` model `config.json` must also be downloaded from HuggingFace:
