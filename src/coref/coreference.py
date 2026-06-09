@@ -36,7 +36,7 @@ import multiprocessing.pool
 import sys
 import time
 from collections import defaultdict
-from typing import Optional
+from typing import Callable, Optional
 
 import nltk
 import torch
@@ -866,6 +866,7 @@ def run(
     max_new_tokens: int = None,
     is_tokenized: bool = False,
     debug: bool = False,
+    checkpoint_callback: Callable = None,
 ) -> dict[str, str]:
     """Process one or more documents through the coreference system.
 
@@ -879,6 +880,8 @@ def run(
             dynamically from input length. A warning is logged if any output
             hits the limit.
         debug: Print per-step model inputs and predictions.
+        checkpoint_callback: Callable function, e.g. to write a checkpoint file
+            upon every milestone of coreference resolution results.  
 
     Returns:
         Mapping of document title → annotated text string with cluster brackets.
@@ -902,6 +905,7 @@ def run(
         enabled=not sys.stderr.isatty()
     )
     sentences_processed = 0
+    checkpointed_docs = set()
 
     with tqdm(total=total_sentences, unit="sent", desc="Coreference", disable=not sys.stderr.isatty()) as pbar:
         step = 0
@@ -944,7 +948,19 @@ def run(
             pbar.update(len(states))
             sentences_processed += len(states)
             docs_done = sum(1 for s in states_dict.values() if s.extend_done())
+            prev_milestone = progress.milestone
             progress.update(len(states), extra=f"{docs_done}/{n_docs} docs done")
+
+            # Checkpoint callback at each new milestone with newly completed docs
+            if checkpoint_callback and progress.milestone > prev_milestone:
+                newly_done = {
+                    k: v for k, v in states_dict.items()
+                    if v.extend_done() and k not in checkpointed_docs
+                }
+                if newly_done:
+                    partial_results = render_annotated_text(newly_done)
+                    checkpoint_callback(partial_results, progress.milestone - 1)
+                    checkpointed_docs.update(newly_done.keys())
 
             # pbar.n // n_docs approximates which sentence pass reached across all docs
             sent_round = pbar.n // n_docs
