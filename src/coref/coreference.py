@@ -952,29 +952,6 @@ def render_annotated_text(states_dict: dict) -> dict[str, dict]:
 
     return outputs
 
-
-# ---------------------------------------------------------------------------
-# State serialisation helpers
-# ---------------------------------------------------------------------------
-
-def serialize_states(states_dict: dict) -> dict:
-    """Serialise a {doc_key: State} mapping to a JSON-compatible dict."""
-    return {str(k): v.to_dict() for k, v in states_dict.items()}
-
-
-def deserialize_states(raw: dict) -> dict:
-    """Restore a {doc_key: State} mapping from a serialised dict.
-
-    JSON only has string keys; original doc keys that were ints are converted
-    back via int() when the string is purely numeric.
-    """
-    result = {}
-    for k, v in raw.items():
-        key = int(k) if isinstance(k, str) and k.lstrip("-").isdigit() else k
-        result[key] = State.from_dict(v)
-    return result
-
-
 # ---------------------------------------------------------------------------
 # Main processing loop
 # ---------------------------------------------------------------------------
