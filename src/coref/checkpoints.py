@@ -11,16 +11,16 @@ logger = logging.getLogger(__name__)
 # Checkpoint file helper functions
 # ---------------------------------------------------------------------------
 
-def get_checkpoint_path(corpus_json_file: str, checkpoint_num: int) -> str:
-    """Get the path for a checkpoint file."""
-    base = corpus_json_file.replace(".json", "")
+def get_checkpoint_path(input_file: str, checkpoint_num: int) -> str:
+    """Get the path for a checkpoint file with respect to an input file."""
+    base, _ = os.path.splitext(input_file)
     return f"{base}.coref_checkpoint_{checkpoint_num}.json"
 
 
-def get_checkpoint_offset(corpus_json_file: str) -> int:
+def get_checkpoint_offset(input_file: str) -> int:
     """Return max existing checkpoint number + 1, or 0 if none exist.
     Used to avoid overwriting existing checkpoints on resume."""
-    base = corpus_json_file.replace(".json", "")
+    base, _ = os.path.splitext(input_file)
     existing = glob.glob(f"{base}.coref_checkpoint_*.json")
     if not existing:
         return 0
@@ -34,8 +34,8 @@ def get_checkpoint_offset(corpus_json_file: str) -> int:
     return max(nums) + 1 if nums else 0
 
 
-def load_coref_checkpoints(corpus_json_file: str) -> tuple[dict, dict]:
-    """Load all coref checkpoints for a corpus.
+def load_coref_checkpoints(input_file: str) -> tuple[dict, dict]:
+    """Load all coref checkpoints for a given input file (e.g. corpus JSON).
 
     Returns:
         completed_entries: {entry_idx: coref_result} merged across all checkpoints.
@@ -44,7 +44,7 @@ def load_coref_checkpoints(corpus_json_file: str) -> tuple[dict, dict]:
                            Empty dict when no checkpoints exist or the format
                            pre-dates in-progress serialisation.
     """
-    base = corpus_json_file.replace(".json", "")
+    base, _ = os.path.splitext(input_file)
     checkpoint_pattern = f"{base}.coref_checkpoint_*.json"
     checkpoint_files = sorted(glob.glob(checkpoint_pattern))
 
@@ -55,7 +55,7 @@ def load_coref_checkpoints(corpus_json_file: str) -> tuple[dict, dict]:
     for checkpoint_file in checkpoint_files:
         try:
             with open(checkpoint_file, 'r', encoding='utf-8') as f:
-                checkpoint = json.load(f)
+                checkpoint: dict = json.load(f)
             for entry in checkpoint.get('completed_entries', []):
                 completed_entries[entry['idx']] = entry['coref_result']
             num = checkpoint.get('checkpoint_num', -1)
@@ -76,7 +76,7 @@ def load_coref_checkpoints(corpus_json_file: str) -> tuple[dict, dict]:
     return completed_entries, in_progress_raw
 
 
-def save_coref_checkpoint(corpus_json_file: str,
+def save_coref_checkpoint(input_file: str,
                           completed_entries: dict,
                           checkpoint_num: int,
                           in_progress_states: dict = None,
@@ -88,7 +88,7 @@ def save_coref_checkpoint(corpus_json_file: str,
     in_progress_states: optional pre-serialised {str_key: state_dict} for
                         docs still being processed. Pass None to omit.
     """
-    checkpoint_path = get_checkpoint_path(corpus_json_file, checkpoint_num)
+    checkpoint_path = get_checkpoint_path(input_file, checkpoint_num)
     checkpoint_data = {
         'checkpoint_num': checkpoint_num,
         'completed_entries': [
@@ -108,9 +108,9 @@ def save_coref_checkpoint(corpus_json_file: str,
     )
 
 
-def cleanup_coref_checkpoints(corpus_json_file: str) -> None:
+def cleanup_coref_checkpoints(input_file: str) -> None:
     """Delete all coref checkpoint files for a corpus after successful completion."""
-    base = corpus_json_file.replace(".json", "")
+    base, _ = os.path.splitext(input_file)
     checkpoint_pattern = f"{base}.coref_checkpoint_*.json"
     checkpoint_files = glob.glob(checkpoint_pattern)
     for checkpoint_file in checkpoint_files:
