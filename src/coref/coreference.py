@@ -450,6 +450,105 @@ class State:
     def extend_done(self) -> bool:
         return self.done
 
+    def to_dict(self) -> dict:
+        """Serialize State to a JSON-compatible dict for checkpointing.
+
+        Tuples that appear as values in cluster dicts and in
+        annotation_coreference_start are stored as two-element lists;
+        integer dict keys (predictions_str, input_document sentences/token_maps,
+        speakers) are stored as strings (JSON only allows string keys).
+        """
+        return {
+            "sentence_num": self.sentence_num,
+            "clusters_num": self.clusters_num,
+            "done": self.done,
+            "node_wise": self.node_wise,
+            "max_len_doc": self.max_len_doc,
+            "genre": self.genre,
+            "token_map_context": self.token_map_context,
+            "annotation_context": self.annotation_context,
+            # Each inner item is [mention_index_tuple, cluster_name]; serialize tuple as list.
+            "annotation_coreference_start": [
+                [[list(item[0]), item[1]] for item in slot]
+                for slot in self.annotation_coreference_start
+            ],
+            "annotation_coreference_end": self.annotation_coreference_end,
+            "token_map": self.token_map,
+            "annotation": self.annotation,
+            # cluster values are lists of (start_tid, end_tid) tuples → lists
+            "cluster_name_to_cluster": {
+                k: [list(m) for m in v]
+                for k, v in self.cluster_name_to_cluster.items()
+            },
+            # mention_index_to_cluster is reconstructed on load; skip to avoid
+            # serialising shared-reference lists redundantly.
+            "mention_index_to_cluster_name": self.mention_index_to_cluster_name,
+            "predictions_str": {str(k): v for k, v in self.predictions_str.items()},
+            "speakers": {str(k): v for k, v in self.speakers.items()},
+            "input_document": {
+                "doc_key": self.input_document["doc_key"],
+                "sentences": {
+                    str(k): v for k, v in self.input_document["sentences"].items()
+                },
+                "token_maps": {
+                    str(k): v for k, v in self.input_document["token_maps"].items()
+                },
+                "speakers": self.input_document["speakers"],
+                "genres": self.input_document["genres"],
+            },
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "State":
+        """Reconstruct a State from a dict produced by to_dict().
+
+        Uses object.__new__ to bypass __init__ (which would call extend()
+        and advance the state machine past its saved position).
+        """
+        state = object.__new__(cls)
+        state.sentence_num = d["sentence_num"]
+        state.clusters_num = d["clusters_num"]
+        state.done = d["done"]
+        state.node_wise = d["node_wise"]
+        state.max_len_doc = d["max_len_doc"]
+        state.genre = d["genre"]
+        state.token_map_context = d["token_map_context"]
+        state.annotation_context = d["annotation_context"]
+        # Restore annotation_coreference_start: inner mention indices as tuples
+        state.annotation_coreference_start = [
+            [[tuple(item[0]), item[1]] for item in slot]
+            for slot in d["annotation_coreference_start"]
+        ]
+        state.annotation_coreference_end = d["annotation_coreference_end"]
+        state.token_map = d["token_map"]
+        state.annotation = d["annotation"]
+        # Restore cluster_name_to_cluster with tuple spans
+        state.cluster_name_to_cluster = {
+            k: [tuple(m) for m in v]
+            for k, v in d["cluster_name_to_cluster"].items()
+        }
+        state.mention_index_to_cluster_name = d["mention_index_to_cluster_name"]
+        # Reconstruct mention_index_to_cluster via shared references:
+        # each mention key maps to the same list object as its cluster entry.
+        state.mention_index_to_cluster = {}
+        for mention_str, cluster_name in state.mention_index_to_cluster_name.items():
+            bracket_name = "[" + cluster_name
+            if bracket_name in state.cluster_name_to_cluster:
+                state.mention_index_to_cluster[mention_str] = (
+                    state.cluster_name_to_cluster[bracket_name]
+                )
+        state.predictions_str = {int(k): v for k, v in d["predictions_str"].items()}
+        state.speakers = {int(k): v for k, v in d["speakers"].items()}
+        idoc = d["input_document"]
+        state.input_document = {
+            "doc_key": idoc["doc_key"],
+            "sentences": {int(k): v for k, v in idoc["sentences"].items()},
+            "token_maps": {int(k): v for k, v in idoc["token_maps"].items()},
+            "speakers": idoc["speakers"],
+            "genres": idoc["genres"],
+        }
+        return state
+
     def extend(
         self,
         prediction_str: Optional[str] = None,
@@ -855,6 +954,28 @@ def render_annotated_text(states_dict: dict) -> dict[str, dict]:
 
 
 # ---------------------------------------------------------------------------
+# State serialisation helpers
+# ---------------------------------------------------------------------------
+
+def serialize_states(states_dict: dict) -> dict:
+    """Serialise a {doc_key: State} mapping to a JSON-compatible dict."""
+    return {str(k): v.to_dict() for k, v in states_dict.items()}
+
+
+def deserialize_states(raw: dict) -> dict:
+    """Restore a {doc_key: State} mapping from a serialised dict.
+
+    JSON only has string keys; original doc keys that were ints are converted
+    back via int() when the string is purely numeric.
+    """
+    result = {}
+    for k, v in raw.items():
+        key = int(k) if isinstance(k, str) and k.lstrip("-").isdigit() else k
+        result[key] = State.from_dict(v)
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Main processing loop
 # ---------------------------------------------------------------------------
 
@@ -867,12 +988,13 @@ def run(
     is_tokenized: bool = False,
     debug: bool = False,
     checkpoint_callback: Callable = None,
+    in_progress_states: dict = None,
 ) -> dict[str, str]:
     """Process one or more documents through the coreference system.
 
     Args:
         documents: Mapping of document title → plain text (sentences separated
-            by newlines).
+            by newlines). Entries present in in_progress_states are skipped here.
         model: Pre-trained and loaded mT5 model for coreference resolution.
         batch_size: Number of documents packed into a single GPU forward pass.
         max_new_tokens: Decoder token budget per sequence. Each additional token
@@ -880,16 +1002,26 @@ def run(
             dynamically from input length. A warning is logged if any output
             hits the limit.
         debug: Print per-step model inputs and predictions.
-        checkpoint_callback: Callable function, e.g. to write a checkpoint file
-            upon every milestone of coreference resolution results.  
+        checkpoint_callback: Optional callable(partial_results, milestone,
+            in_progress_states) called at each progress milestone. partial_results
+            is a rendered-text dict for newly completed docs; in_progress_states
+            is the {key: State} dict for all still-running docs.
+        in_progress_states: Optional {doc_key: State} mapping of partially
+            processed documents to resume. These are seeded into states_dict
+            directly without re-creating from document text.
 
     Returns:
         Mapping of document title → annotated text string with cluster brackets.
     """
-    states_dict = {
-        title: State(create_document(text, title, is_tokenized=is_tokenized))
-        for title, text in documents.items()
-    }
+    # Seed states_dict with any pre-loaded in-progress states, then add fresh
+    # State objects for documents that haven't been started yet.
+    states_dict: dict = {}
+    if in_progress_states:
+        states_dict.update(in_progress_states)
+        logger.info(f"Resuming {len(in_progress_states)} in-progress documents from checkpoint")
+    for title, text in documents.items():
+        if title not in states_dict:
+            states_dict[title] = State(create_document(text, title, is_tokenized=is_tokenized))
 
     total_time = time.time()
     total_results = 0
@@ -951,16 +1083,23 @@ def run(
             prev_milestone = progress.milestone
             progress.update(len(states), extra=f"{docs_done}/{n_docs} docs done")
 
-            # Checkpoint callback at each new milestone with newly completed docs
+            # Checkpoint callback at each new milestone.
+            # Always fires (even when no docs have finished yet) so that
+            # in-progress State objects are saved and a crash can be resumed
+            # from the exact sentence the model was at, not just from the last
+            # batch of completed documents.
             if checkpoint_callback and progress.milestone > prev_milestone:
                 newly_done = {
                     k: v for k, v in states_dict.items()
                     if v.extend_done() and k not in checkpointed_docs
                 }
-                if newly_done:
-                    partial_results = render_annotated_text(newly_done)
-                    checkpoint_callback(partial_results, progress.milestone - 1)
-                    checkpointed_docs.update(newly_done.keys())
+                still_running = {
+                    k: v for k, v in states_dict.items()
+                    if not v.extend_done()
+                }
+                partial_results = render_annotated_text(newly_done) if newly_done else {}
+                checkpoint_callback(partial_results, progress.milestone - 1, still_running)
+                checkpointed_docs.update(newly_done.keys())
 
             # pbar.n // n_docs approximates which sentence pass reached across all docs
             sent_round = pbar.n // n_docs
