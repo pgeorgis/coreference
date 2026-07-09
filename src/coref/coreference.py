@@ -43,7 +43,7 @@ import torch
 from tqdm import tqdm
 from transformers import MT5ForConditionalGeneration, T5Tokenizer
 
-from constants import DEFAULT_COREF_MODEL_DIR, MT5_TOKENIZER
+from constants.models import DEFAULT_COREF_MODEL_DIR, MT5_TOKENIZER
 from utils import ProgressLogger
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)s %(levelname)s: %(message)s')
