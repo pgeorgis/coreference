@@ -26,12 +26,10 @@ import os
 
 import msgpack
 import numpy as np
-import zarr
 import torch
+import zarr
 from safetensors.torch import save_file as safetensors_save_file
-
 from transformers import MT5Config
-
 
 # ---------------------------------------------------------------------------
 # Static parameter name mapping

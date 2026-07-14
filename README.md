@@ -6,24 +6,29 @@ The pre-trained coreference resolution model included here is the multilingual s
 ### Model checkpoint download
 The [model checkpoint linked to from `google-research/coref_mt5`](https://console.cloud.google.com/storage/browser/gresearch/correference_seq2seq/checkpoint_1140000) was downloaded with [`gsutil`](https://docs.cloud.google.com/storage/docs/gsutil_install), e.g.:
 ```
-mkdir -p models/coref/coref_mt5_source
+mkdir -p models/coref/pretrained/coref_mt5_source
 
 gsutil -m cp -r \
   gs://gresearch/correference_seq2seq/checkpoint_1140000/ \
-  models/coref/coref_mt5_source/
+  models/coref/pretrained/coref_mt5_source/
 ```
 
-The final [model config](./coref-mt5-xxl-bohnetetal2022/config.json) is saved in this project repository, but if re-downloading and re-converting the checkpoint from the source, the `mt5` model `config.json` must also be downloaded from HuggingFace:
+The final [model config](./pretrained/coref-mt5-xxl-bohnetetal2022/config.json) is saved in this project repository, but if re-downloading and re-converting the checkpoint from the source, the `mt5` model `config.json` must also be downloaded from HuggingFace:
 ```
 curl -L \
-  -o models/coref/coref-mt5-xxl-bohnetetal2022/mt5_xxl_config.json \
+  -o models/coref/pretrained/coref-mt5-xxl-bohnetetal2022/mt5_xxl_config.json \
   https://huggingface.co/google/mt5-xxl/resolve/main/config.json
 ```
 
 ### Checkpoint Conversion
-This checkpoint in T5X/JAX (Zarr) format was converted to a HuggingFace PyTorch checkpoint using [`convert_checkpoint.py`](./setup/convert_checkpoint.py).
+This checkpoint in T5X/JAX (Zarr) format was converted to a HuggingFace PyTorch checkpoint using [`convert_checkpoint.py`](./pretrained/setup/convert_checkpoint.py).
 
-First the virtual environment needs to be set up:
+The model weights, source checkpoint, and conversion tooling all live under [`pretrained/`](./pretrained/), so start there:
+```
+cd models/coref/pretrained
+```
+
+First the virtual environment needs to be set up (this is a separate environment used only for one-time checkpoint conversion, not the main project environment):
 ```
 cd setup
 ./setup_checkpoint_conversion.sh
@@ -44,18 +49,18 @@ python setup/convert_checkpoint.py \
     --pytorch_dump_path coref-mt5-xxl-bohnetetal2022
 ```
 
-The above conversion results in two files in [`coref-mt5-xxl-bohnetetal2022`](./coref-mt5-xxl-bohnetetal2022) which can then be used to load the model with PyTorch:
-* [`config.json`](./coref-mt5-xxl-bohnetetal2022/config.json)
-* [`model.safetensors`](./coref-mt5-xxl-bohnetetal2022/model.safetensors)
+The above conversion results in two files in [`coref-mt5-xxl-bohnetetal2022`](./pretrained/coref-mt5-xxl-bohnetetal2022) which can then be used to load the model with PyTorch:
+* [`config.json`](./pretrained/coref-mt5-xxl-bohnetetal2022/config.json)
+* [`model.safetensors`](./pretrained/coref-mt5-xxl-bohnetetal2022/model.safetensors)
 
 ## Usage
-Coreference resolution can be run on novel texts using the [`coreference.py`](../../coreference.py) script in the project root directory, adapted from the [Jupyter notebook provided with the pre-trained model](https://github.com/google-research/google-research/blob/master/coref_mt5/colabs/coreference_decoder.ipynb).
+Coreference resolution can be run on novel texts using the [`coreference.py`](./coreference.py) script in this directory, adapted from the [Jupyter notebook provided with the pre-trained model](https://github.com/google-research/google-research/blob/master/coref_mt5/colabs/coreference_decoder.ipynb).
 
-The script should be run using the virtual environment from the main project root.
+The script should be run from the project root, using the main project virtual environment.
 
 Example:
 ```
-python3 coreference.py --model-path models/coref/coref-mt5-xxl-bohnetetal2022 --text "Der alten Entwicklungshilfepolitik der SPD hält er \"\"Wirtschaftsphobie, Bundeswehrphobie und Israelphobie \"\" vor. Israel, betont der neue Entwicklungshilfeminister, habe die weltweit besten Bewässerungssysteme. Die werde er in der arabischen Welt propagieren."
+python3 -m models.coref.coreference --model-path models/coref/pretrained/coref-mt5-xxl-bohnetetal2022 --text "Der alten Entwicklungshilfepolitik der SPD hält er \"\"Wirtschaftsphobie, Bundeswehrphobie und Israelphobie \"\" vor. Israel, betont der neue Entwicklungshilfeminister, habe die weltweit besten Bewässerungssysteme. Die werde er in der arabischen Welt propagieren."
 ```
 
 Example output with resolved coreference annotations:
