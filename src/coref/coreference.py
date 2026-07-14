@@ -23,11 +23,11 @@ Adapted from https://github.com/google-research/google-research/blob/master/core
 
 Usage
 -----
-# Run on custom text with a locally-converted HuggingFace checkpoint:
-    python coreference.py --model-path coref-mt5-xxl-bohnetetal2022/ --text "Your text here."
+# Run on custom text with a locally-converted HuggingFace checkpoint (from the project root):
+    python -m models.coref.coreference --model-path models/coref/pretrained/coref-mt5-xxl-bohnetetal2022/ --text "Your text here."
 
 # Pass multi-sentence text (one sentence per line) from a file:
-    python coreference.py --model-path coref-mt5-xxl-bohnetetal2022/ --file my_doc.txt
+    python -m models.coref.coreference --model-path models/coref/pretrained/coref-mt5-xxl-bohnetetal2022/ --file my_doc.txt
 """
 
 import argparse
@@ -44,7 +44,7 @@ from tqdm import tqdm
 from transformers import MT5ForConditionalGeneration, T5Tokenizer
 
 from constants.models import DEFAULT_COREF_MODEL_DIR, MT5_TOKENIZER
-from utils import ProgressLogger
+from utils.utils import ProgressLogger
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)s %(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
