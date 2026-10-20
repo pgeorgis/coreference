@@ -3,7 +3,7 @@ import json
 import logging
 import os
 
-from models.coref.coreference import State
+from .coreference import State
 
 logger = logging.getLogger(__name__)
 

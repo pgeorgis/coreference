@@ -1,0 +1,31 @@
+[project]
+name = "coref"
+version = "0.1.0"
+description = "Coreference resolution with a seq2seq transition-based mT5 model (Bohnet et al., 2022)."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+requires-python = ">=3.11"
+dependencies = [
+    "torch>=2.2",
+    "transformers>=5.0",
+    "sentencepiece>=0.2",
+    "protobuf>=4",  # needed by transformers to load the mT5 SentencePiece tokenizer
+    "accelerate>=1.1",  # needed for device_map when loading the model
+    "nltk>=3.8",
+    "tqdm>=4.66",
+    "python-dotenv>=1.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+markers = ["model: needs the converted coreference model (set COREF_MODEL_DIR); loads ~30 GB of weights"]

@@ -1,0 +1,12 @@
+.venv/
+.env
+.DS_Store
+__pycache__/
+*.egg-info/
+.pytest_cache/
+
+# Model weights
+pretrained/
+
+# Coreference checkpoints written during long runs
+*.coref_checkpoint_*.json

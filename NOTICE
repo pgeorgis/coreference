@@ -1,0 +1,16 @@
+Coreference resolution (coref)
+
+This project includes code adapted from the Google Research project "coref_mt5"
+(https://github.com/google-research/google-research/tree/master/coref_mt5),
+Copyright 2022 The Google Research Authors, licensed under the Apache License, Version 2.0:
+  - src/coref/coreference.py (adapted from colabs/coreference_decoder.ipynb)
+
+tools/convert_checkpoint.py is a memory-efficient replacement for Hugging Face's
+convert_t5x_checkpoint_to_pytorch.py (Apache License, Version 2.0).
+
+The method is described in:
+  Bohnet, Alberti, Collins (2023). "Coreference Resolution through a seq2seq Transition-Based System."
+  Transactions of the Association for Computational Linguistics. https://arxiv.org/abs/2211.12142
+
+The pre-trained model checkpoint is not part of this repository. It is provided by Google Research
+(see the link in the README) and is subject to the terms under which it is distributed there.

@@ -23,11 +23,11 @@ Adapted from https://github.com/google-research/google-research/blob/master/core
 
 Usage
 -----
-# Run on custom text with a locally-converted HuggingFace checkpoint (from the project root):
-    python -m models.coref.coreference --model-path models/coref/pretrained/coref-mt5-xxl-bohnetetal2022/ --text "Your text here."
+# Run on custom text with a locally-converted HuggingFace checkpoint (or set $COREF_MODEL_DIR):
+    python -m coref --model-path pretrained/coref-mt5-xxl-bohnetetal2022/ --text "Your text here."
 
 # Pass multi-sentence text (one sentence per line) from a file:
-    python -m models.coref.coreference --model-path models/coref/pretrained/coref-mt5-xxl-bohnetetal2022/ --file my_doc.txt
+    python -m coref --model-path pretrained/coref-mt5-xxl-bohnetetal2022/ --file my_doc.txt
 """
 
 import argparse
@@ -43,10 +43,11 @@ import torch
 from tqdm import tqdm
 from transformers import MT5ForConditionalGeneration, T5Tokenizer
 
-from constants.models import DEFAULT_COREF_MODEL_DIR, MT5_TOKENIZER
-from utils.utils import ProgressLogger
+from .constants import MT5_TOKENIZER
+from .env import load_hf_token
+from .paths import find_model
+from .progress import ProgressLogger
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)s %(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -72,14 +73,16 @@ DEFAULT_MAX_NEW_TOKENS = 128
 # Model loading
 # ---------------------------------------------------------------------------
 
-def load_coreference_model(hf_model_path: str, compile: bool = True) -> MT5ForConditionalGeneration:
+def load_coreference_model(hf_model_path: str = None, compile: bool = True) -> MT5ForConditionalGeneration:
     """Load coreference resolution model weights from HuggingFace checkpoint format.
 
     Args:
-        hf_model_path: Path to a (converted) HuggingFace checkpoint directory.
+        hf_model_path: Path to a (converted) HuggingFace checkpoint directory. If None, the
+            directory in the environment variable COREF_MODEL_DIR is used.
         compile (bool): If True, compiles the model with torch.compile() before returning.
     """
 
+    hf_model_path = find_model(hf_model_path)
     logger.info(f"Loading coreference model from {hf_model_path} ...")
     # Use float16 to fit in 64 GB. On Apple Silicon, MPS gives access to
     # the full unified memory pool. On CUDA, device_map="auto" shards
@@ -1096,8 +1099,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model-path",
-        default=DEFAULT_COREF_MODEL_DIR,
-        help="Path to a HuggingFace checkpoint directory for a pre-trained mT5 coreference resolution model.",
+        default=None,
+        help="Path to a HuggingFace checkpoint directory for a pre-trained mT5 coreference resolution model (default: $COREF_MODEL_DIR).",
     )
     parser.add_argument(
         "--text",
@@ -1148,6 +1151,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)s %(levelname)s: %(message)s')
+    load_hf_token()
     args = parse_args()
     if args.debug:
         logger.setLevel(logging.DEBUG)
