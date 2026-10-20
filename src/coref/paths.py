@@ -12,7 +12,14 @@ def find_model(model_path: str | os.PathLike = None) -> str:
     then the directory in the environment variable COREF_MODEL_DIR.
     """
     if model_path is not None:
-        return str(model_path)
+        path = str(model_path)
+        if Path(path).expanduser().exists():
+            return str(Path(path).expanduser())
+        if path.startswith(("/", "./", "../", "~")):
+            # Looks like a file system path, not a Hub ID: fail clearly instead of letting
+            # Hugging Face report a confusing "Repo id must be in the form ..." error
+            raise FileNotFoundError(f"Model directory not found: {path}")
+        return path  # otherwise assumed to be a Hugging Face Hub model ID
     env_dir = os.environ.get(MODEL_DIR_ENV_VAR)
     if env_dir:
         directory = Path(env_dir).expanduser()
