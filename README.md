@@ -37,6 +37,10 @@ Replace `hf_abcd` with your actual token.
 ```bash
 export COREF_MODEL_DIR=/path/to/pretrained/coref-mt5-xxl-bohnetetal2022
 ```
+For the command-line interface, the variable can also be put in a `.env` file in the directory you run it from (see [Hugging Face access token](#hugging-face-access-token)):
+```
+COREF_MODEL_DIR=/path/to/pretrained/coref-mt5-xxl-bohnetetal2022
+```
 
 ### Model checkpoint download and conversion
 The [model checkpoint linked to from `google-research/coref_mt5`](https://console.cloud.google.com/storage/browser/gresearch/correference_seq2seq/checkpoint_1140000) can be downloaded with [`gsutil`](https://docs.cloud.google.com/storage/docs/gsutil_install) (~79 GB), from the repository root:
