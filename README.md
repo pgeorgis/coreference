@@ -103,6 +103,7 @@ In Python, `coref.run(documents, model, batch_size=16, max_workers=1, is_tokeniz
 * [`src/coref/`](./src/coref/)
     * [`coreference.py`](./src/coref/coreference.py): model loading, the transition-based `State`, `run`, and the command-line interface.
     * [`checkpoints.py`](./src/coref/checkpoints.py): checkpoint helpers for resumable runs.
+    * [`tokens.py`](./src/coref/tokens.py): coreference resolution on already tokenized text, with the mapping between tokens and model input.
     * [`paths.py`](./src/coref/paths.py), [`constants.py`](./src/coref/constants.py), [`progress.py`](./src/coref/progress.py): model lookup, constants, and progress logging.
 * [`tools/`](./tools/): checkpoint conversion script and environment setup.
 * [`configs/`](./configs/): the converted model's `config.json`.

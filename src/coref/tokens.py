@@ -43,18 +43,25 @@ def map_spans_to_tokens(spans: dict, token_indices: list[int]) -> dict:
     }
 
 
-def resolve_coreference_tokens(sentences: list[list[str]], model, **run_kwargs) -> dict:
+def resolve_coreference_tokens(sentences: list[list[str]],
+                               model,
+                               speakers: list[str] = None,
+                               **run_kwargs,
+                               ) -> dict:
     """Run coreference resolution on one tokenized document.
 
     Args:
         sentences: Tokens per sentence.
         model: Loaded coreference model (see `load_coreference_model`).
+        speakers: Optional speaker name of each sentence, for dialogues (one per element of `sentences`).
         **run_kwargs: Further arguments of `coreference.run`, e.g. `batch_size`.
 
     Returns:
         {"text": text with mentions in [N ... ] brackets (without blank tokens),
          "spans": {entity: [(start, end), ...]} with inclusive indices into the flat sequence of all input tokens}
     """
+    if speakers is not None and len(speakers) != len(sentences):
+        raise ValueError(f"{len(speakers)} speakers given for {len(sentences)} sentences")
     text, token_indices = tokens_to_document(sentences)
     if not text:
         null_result = {
@@ -62,6 +69,15 @@ def resolve_coreference_tokens(sentences: list[list[str]], model, **run_kwargs) 
             "spans": {},
         }
         return null_result
+    if speakers is not None:
+        # Speakers corresponding to empty sentences (which were dropped) are omitted
+        run_kwargs["speakers"] = {
+            "document": [
+                speaker
+                for sentence, speaker in zip(sentences, speakers)
+                if any(token.strip() for token in sentence)
+            ]
+        }
     result = run(
         documents={"document": text},
         model=model,

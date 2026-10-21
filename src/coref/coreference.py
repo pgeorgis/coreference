@@ -799,6 +799,7 @@ class State:
 def create_document(document: str,
                     title: str = "document",
                     is_tokenized: bool = False,
+                    speakers: list[str] = None,
                     ) -> dict:
     """Tokenise a plain-text document into the internal input format.
 
@@ -807,6 +808,8 @@ def create_document(document: str,
         title: Document identifier used in output.
         is_tokenized (bool):    Indicates whether the input text is already tokenized.
                                 If False, the text is tokenized here using NLTK.
+        speakers: Optional speaker name of each sentence (in dialogues). The model is given the speaker at the start
+                                of each sentence. If None, the speaker is unspecified ("_").
 
     Returns:
         Dict with keys: doc_key, sentences, token_maps, speakers, genres.
@@ -820,8 +823,12 @@ def create_document(document: str,
         "genres": [],
     }
 
+    sentence_texts = document.split("\n")
+    if speakers is not None and len(speakers) != len(sentence_texts):
+        raise ValueError(f"{len(speakers)} speakers given for {len(sentence_texts)} sentences of document <{title}>")
+
     tid = 0
-    for k, sentence in enumerate(document.split("\n")):
+    for k, sentence in enumerate(sentence_texts):
         if is_tokenized:
             input_document["sentences"][k] = sentence.split()
         else:
@@ -829,7 +836,7 @@ def create_document(document: str,
         input_document["token_maps"][k] = []
         for _ in input_document["sentences"][k]:
             input_document["token_maps"][k].append(tid)
-            input_document["speakers"].append((tid, "_"))
+            input_document["speakers"].append((tid, "_" if speakers is None else speakers[k]))
             input_document["genres"].append("wi")
             tid += 1
 
@@ -969,6 +976,7 @@ def run(
     debug: bool = False,
     checkpoint_callback: Callable = None,
     in_progress_states: dict = None,
+    speakers: dict[str, list[str]] = None,
 ) -> dict[str, str]:
     """Process one or more documents through the coreference system.
 
@@ -989,6 +997,8 @@ def run(
         in_progress_states: Optional {doc_key: State} mapping of partially
             processed documents to resume. These are seeded into states_dict
             directly without re-creating from document text.
+        speakers: Optional mapping of document title -> speaker name of each sentence of the document.
+            Documents without an entry have no specified speakers.
 
     Returns:
         Mapping of document title → annotated text string with cluster brackets.
@@ -1001,7 +1011,15 @@ def run(
         logger.info(f"Resuming {len(in_progress_states)} in-progress documents from checkpoint")
     for title, text in documents.items():
         if title not in states_dict:
-            states_dict[title] = State(create_document(text, title, is_tokenized=is_tokenized))
+            doc_speakers = speakers.get(title) if speakers else None
+            states_dict[title] = State(
+                create_document(
+                    document=text,
+                    title=title,
+                    is_tokenized=is_tokenized,
+                    speakers=doc_speakers
+                )
+            )
 
     total_time = time.time()
     total_results = 0
